@@ -12,7 +12,7 @@ router.post('/login', async (req, res) => {
     }
 
     const usuario = await verificarCredenciales(email, password);
-    
+
     if (usuario) {
         req.session.user = {
             id: usuario.id,
@@ -21,10 +21,17 @@ router.post('/login', async (req, res) => {
             apellidos: usuario.apellidos
         };
 
-        return res.status(200).json({ mensaje: "Inicio de sesión exitoso." });
-    }
+        req.session.save(err => {
+            if (err) {
+                console.error("Error al guardar la sesión:", err);
+                return res.status(500).json({ mensaje: "Error al iniciar sesión." });
+            }
+            return res.status(200).json({ mensaje: "Inicio de sesión exitoso." });
+        });
 
-    return res.status(401).json({ mensaje: "Correo o contraseña incorrectos." });
+    } else {
+        return res.status(401).json({ mensaje: "Correo o contraseña incorrectos." });
+    }
 });
 
 router.get('/perfil', (req, res) => {

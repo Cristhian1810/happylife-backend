@@ -16,11 +16,6 @@ app.set('trust proxy', 1);
 
 app.get('/favicon.ico', (req, res) => res.status(204));
 
-app.use(cors({
-    origin: isProduction ? 'http://127.0.0.1:5500' : 'http://127.0.0.1:5500',
-    credentials: true
-}));
-
 app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
@@ -31,6 +26,11 @@ app.use(session({
         sameSite: isProduction ? 'none' : 'lax',
         maxAge: 1000 * 60 * 60 * 24
     }
+}));
+
+app.use(cors({
+    origin: 'http://127.0.0.1:5500',
+    credentials: true
 }));
 
 app.use(morgan('dev'));
