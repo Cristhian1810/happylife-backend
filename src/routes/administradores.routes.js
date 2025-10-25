@@ -5,7 +5,9 @@ import bcrypt from 'bcryptjs';
 const router = Router();
 
 router.get('/administradores', async (req, res) => {
-    const { rows } = await pool.query('SELECT id, email, dni, nombres, apellidos, telefono, esta_activo FROM usuarios WHERE rol_id = 2 ORDER BY nombres ASC');
+    const { rows } = await pool.query(
+        'SELECT id, email, dni, nombres, apellidos, telefono, esta_activo, fecha_creacion FROM usuarios WHERE rol_id = 2 ORDER BY nombres ASC'
+    );
     res.json(rows);
 });
 
