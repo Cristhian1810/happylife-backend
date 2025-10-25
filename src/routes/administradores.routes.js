@@ -65,7 +65,12 @@ router.put('/administradores/:id', async (req, res) => {
 
         const { rows } = await pool.query(
             `UPDATE usuarios 
-             SET nombres = $1, apellidos = $2, dni = $3, email = $4, telefono = $5, esta_activo = $6
+             SET nombres = $1, 
+                 apellidos = $2, 
+                 dni = $3, 
+                 email = $4, 
+                 telefono = $5, 
+                 esta_activo = COALESCE($6, esta_activo) -- Si $6 es NULL, mantiene el valor actual
              WHERE id = $7 AND rol_id = 2
              RETURNING id, nombres, apellidos, dni, email, telefono, esta_activo`,
             [nombres, apellidos, dni, email, telefono, esta_activo, id]
