@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 const router = Router();
 
 router.get('/pacientes', async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM usuarios WHERE esta_activo = true and rol_id = 5');
+    const { rows } = await pool.query('SELECT * FROM usuarios WHERE rol_id = 5 ORDER BY nombres ASC');
     res.json(rows);
 });
 
