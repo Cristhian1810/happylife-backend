@@ -72,7 +72,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
             horaFinStr = horario.hora_fin;
             duracionCita = horario.duracion_cita_minutos;
         }
-        
+
         const citasAgendadasRes = await pool.query(
             `SELECT fecha_hora_inicio FROM citas 
              WHERE doctor_usuario_id = $1 
@@ -117,7 +117,7 @@ router.post('/citas', isPatient, async (req, res) => {
 
         const { rows } = await pool.query(
             `INSERT INTO citas (paciente_usuario_id, doctor_usuario_id, fecha_hora_inicio, fecha_hora_fin, estado_cita_id, motivo_consulta)
-             VALUES ($1, $2, $3, $4, 1, $5) RETURNING id`, // Estado 1 = 'Programada'
+             VALUES ($1, $2, $3, $4, 1, $5) RETURNING id`,
             [pacienteId, doctor_usuario_id, fechaInicio, fechaFin, motivo_consulta]
         );
 
