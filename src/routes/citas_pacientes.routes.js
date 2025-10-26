@@ -43,7 +43,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
     if (!fecha) return res.status(400).json({ message: "La fecha es requerida." });
 
     try {
-        const diaSemana = new Date(fecha + 'T00:00:00').getUTCDay();
+        const diaSemana = new Date(fecha + 'T12:00:00Z').getUTCDay();
 
         const excepcionRes = await pool.query(
             "SELECT * FROM excepciones_horarios WHERE doctor_usuario_id = $1 AND fecha_excepcion = $2",
@@ -74,14 +74,14 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
         }
         
         const citasAgendadasRes = await pool.query(
-            "SELECT fecha_hora_inicio FROM citas WHERE doctor_usuario_id = $1 AND DATE(fecha_hora_inicio) = $2 AND estado_cita_id != 4",
+            "SELECT fecha_hora_inicio FROM citas WHERE doctor_usuario_id = $1 AND DATE(fecha_hora_inicio AT TIME ZONE 'UTC') = $2 AND estado_cita_id != 4", // 4 = Cancelada
             [doctorId, fecha]
         );
         const citasOcupadas = new Set(citasAgendadasRes.rows.map(c => new Date(c.fecha_hora_inicio).toISOString()));
 
         const slotsDisponibles = [];
-        const startDateTime = new Date(`${fecha}T${horaInicioStr}:00`);
-        const endDateTime = new Date(`${fecha}T${horaFinStr}:00`);
+        const startDateTime = new Date(`${fecha}T${horaInicioStr}`);
+        const endDateTime = new Date(`${fecha}T${horaFinStr}`);
 
         let slotActual = startDateTime;
 
@@ -92,7 +92,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
             }
             slotActual.setMinutes(slotActual.getMinutes() + duracionCita);
         }
-
+        
         res.json(slotsDisponibles);
 
     } catch (error) {
@@ -100,7 +100,6 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
         res.status(500).json({ message: "Error interno del servidor." });
     }
 });
-
 
 router.post('/citas', isPatient, async (req, res) => {
     const pacienteId = req.session.userId;
@@ -152,7 +151,7 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
     const { citaId } = req.params;
     try {
         const { rowCount } = await pool.query(
-            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id IN (1, 2) AND fecha_hora_inicio > NOW()", // 4 = 'Cancelada', solo se puede cancelar si está programada (1) o confirmada (2)
+            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id IN (1, 2) AND fecha_hora_inicio > NOW()", // 4 = 'Cancelada'
             [citaId, pacienteId]
         );
 

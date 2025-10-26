@@ -103,7 +103,7 @@ router.post('/historial-medico', isDoctor, async (req, res) => {
         res.status(201).json({ message: "Historial guardado con éxito.", entry: rows[0] });
     } catch (error) {
         console.error("Error al crear historial:", error);
-        if (error.code === '23505') { // Cita_id ya tiene un historial
+        if (error.code === '23505') {
             return res.status(409).json({ message: "Ya existe un registro de historial para esta cita." });
         }
         res.status(500).json({ message: "Error interno del servidor." });
