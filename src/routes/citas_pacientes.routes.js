@@ -157,18 +157,26 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
     const { citaId } = req.params;
     try {
         const { rowCount } = await pool.query(
-            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id IN (1, 2) AND fecha_hora_inicio > NOW()",
+            `UPDATE citas
+             SET estado_cita_id = 4
+             WHERE id = $1
+             AND paciente_usuario_id = $2
+             AND estado_cita_id != 4
+             AND fecha_hora_inicio > NOW()`,
             [citaId, pacienteId]
         );
+
         if (rowCount === 0) {
-            return res.status(404).json({ message: "La cita no se pudo cancelar." });
+            return res.status(400).json({ message: "No se pudo cancelar la cita. Tal vez ya está cancelada o ya pasó la fecha." });
         }
+
         res.status(200).json({ message: "Cita cancelada correctamente." });
     } catch (error) {
         console.error("Error al cancelar cita:", error);
         res.status(500).json({ message: "Error interno del servidor." });
     }
 });
+
 
 router.get('/mi-historial', isPatient, async (req, res) => {
     const pacienteId = req.session.userId;
