@@ -86,7 +86,7 @@ router.post('/horario/excepciones', authRequired, async (req, res) => {
             RETURNING *;
         `;
         const params = [doctorId, fecha_excepcion, esta_disponible, esta_disponible ? hora_inicio : null, esta_disponible ? hora_fin : null];
-        const { rows } = await client.query(query, params);
+        const { rows } = await pool.query(query, params);
         
         res.status(201).json({ message: "Excepción añadida correctamente.", excepcion: rows[0] });
 
