@@ -172,5 +172,27 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
     }
 });
 
+router.get('/mi-historial', isPatient, async (req, res) => {
+    const pacienteId = req.session.userId;
+    try {
+        const { rows } = await pool.query(`
+            SELECT
+                hm.diagnostico,
+                hm.receta_medica,
+                hm.notas_doctor,
+                c.fecha_hora_inicio as fecha_cita,
+                u.nombres || ' ' || u.apellidos as doctor_nombre
+            FROM historiales_medicos hm
+            JOIN citas c ON hm.cita_id = c.id
+            JOIN usuarios u ON c.doctor_usuario_id = u.id
+            WHERE hm.paciente_usuario_id = $1
+            ORDER BY c.fecha_hora_inicio DESC
+        `, [pacienteId]);
+        res.json(rows);
+    } catch (error) {
+        console.error("Error al obtener el historial del paciente:", error);
+        res.status(500).json({ message: "Error interno del servidor." });
+    }
+});
 
 export default router;

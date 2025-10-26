@@ -43,4 +43,53 @@ router.get('/mis-pacientes', isDoctor, async (req, res) => {
     }
 });
 
+router.get('/mis-pacientes/:pacienteId/historial', isDoctor, async (req, res) => {
+    const { pacienteId } = req.params;
+    const doctorId = req.session.userId;
+    try {
+        const { rows } = await pool.query(`
+            SELECT 
+                hm.id,
+                hm.diagnostico,
+                hm.receta_medica,
+                hm.notas_doctor,
+                hm.fecha_creacion,
+                c.fecha_hora_inicio as fecha_cita
+            FROM historiales_medicos hm
+            JOIN citas c ON hm.cita_id = c.id
+            WHERE hm.paciente_usuario_id = $1 
+              AND c.doctor_usuario_id = $2 -- Asegura que el doctor solo vea registros de sus propias citas
+            ORDER BY hm.fecha_creacion DESC
+        `, [pacienteId, doctorId]);
+        res.json(rows);
+    } catch (error) {
+        console.error("Error al obtener historial:", error);
+        res.status(500).json({ message: "Error interno del servidor." });
+    }
+});
+
+router.post('/historial-medico', isDoctor, async (req, res) => {
+    const { cita_id, paciente_usuario_id, diagnostico, receta_medica, notas_doctor } = req.body;
+    
+    const citaCheck = await pool.query("SELECT doctor_usuario_id FROM citas WHERE id = $1", [cita_id]);
+    if (citaCheck.rows.length === 0 || citaCheck.rows[0].doctor_usuario_id !== req.session.userId) {
+        return res.status(403).json({ message: "No tiene permiso para registrar en esta cita." });
+    }
+
+    try {
+        const query = `
+            INSERT INTO historiales_medicos (cita_id, paciente_usuario_id, diagnostico, receta_medica, notas_doctor)
+            VALUES ($1, $2, $3, $4, $5) RETURNING *
+        `;
+        const { rows } = await pool.query(query, [cita_id, paciente_usuario_id, diagnostico, receta_medica, notas_doctor]);
+        res.status(201).json({ message: "Historial guardado con éxito.", entry: rows[0] });
+    } catch (error) {
+        console.error("Error al crear historial:", error);
+         if (error.code === '23505') { // Cita_id ya tiene un historial
+            return res.status(409).json({ message: "Ya existe un registro de historial para esta cita." });
+        }
+        res.status(500).json({ message: "Error interno del servidor." });
+    }
+});
+
 export default router;
