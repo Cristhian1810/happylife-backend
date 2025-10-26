@@ -4,6 +4,43 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 
+router.get('/perfil', async (req, res) => {
+    if (!req.session.userId) {
+        return res.status(401).json({ message: 'No estás autenticado.' });
+    }
+    const usuarioId = req.session.userId;
+
+    try {
+        const userResult = await pool.query('SELECT * FROM usuarios WHERE id = $1', [usuarioId]);
+        if (userResult.rowCount === 0) {
+            return res.status(404).json({ message: 'Usuario no encontrado.' });
+        }
+        
+        const user = userResult.rows[0];
+        delete user.password_hash;
+
+        if (user.rol_id === 5) {
+            const patientProfileResult = await pool.query(
+                'SELECT alergias, tipo_sangre_id FROM perfiles_pacientes WHERE usuario_id = $1',
+                [usuarioId]
+            );
+            
+            if (patientProfileResult.rowCount > 0) {
+                const patientProfile = patientProfileResult.rows[0];
+                user.alergias = patientProfile.alergias;
+                user.grupo_sanguineo = patientProfile.tipo_sangre_id;
+            }
+        }
+        
+        res.json(user);
+
+    } catch (error) {
+        console.error('Error al obtener el perfil:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+});
+
+
 router.get('/pacientes', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM usuarios WHERE rol_id = 5 ORDER BY nombres ASC');
     res.json(rows);
@@ -69,9 +106,9 @@ router.put('/perfil/actualizar', async (req, res) => {
         direccion,
         genero_id,
         email,
-        tipo_sangre_id,
-        alergias
     } = req.body;
+
+    const { tipo_sangre_id, alergias } = req.body;
 
     const client = await pool.connect();
     try {
@@ -80,44 +117,54 @@ router.put('/perfil/actualizar', async (req, res) => {
         const updateUserQuery = `
             UPDATE usuarios 
             SET 
-                nombres = $1, 
-                apellidos = $2, 
-                telefono = $3, 
-                fecha_nacimiento = $4, 
-                direccion = $5, 
-                genero_id = $6, 
-                email = $7
-            WHERE id = $8
+                nombres = $1, apellidos = $2, telefono = $3, 
+                fecha_nacimiento = $4, direccion = $5, genero_id = $6, email = $7
+            WHERE id = $8 RETURNING rol_id
         `;
-        await client.query(updateUserQuery, [
-            nombres,
-            apellidos,
-            telefono,
-            fecha_nacimiento || null,
-            direccion,
-            genero_id || null,
-            email,
-            usuarioId
+        const userResult = await client.query(updateUserQuery, [
+            nombres, apellidos, telefono,
+            fecha_nacimiento || null, direccion,
+            genero_id || null, email, usuarioId
         ]);
 
-        const updatePatientProfileQuery = `
-            UPDATE perfiles_pacientes
-            SET 
-                alergias = $1, 
-                tipo_sangre_id = $2
-            WHERE usuario_id = $3
-        `;
-        const dbTipoSangreId = tipo_sangre_id === "" ? null : tipo_sangre_id;
-        await client.query(updatePatientProfileQuery, [alergias, dbTipoSangreId, usuarioId]);
+        if (userResult.rowCount === 0) {
+            throw new Error('No se pudo encontrar el usuario para actualizar.');
+        }
 
+        const { rol_id } = userResult.rows[0];
+
+        if (rol_id === 5) {
+            const updatePatientProfileQuery = `
+                UPDATE perfiles_pacientes
+                SET alergias = $1, tipo_sangre_id = $2
+                WHERE usuario_id = $3
+            `;
+            const dbTipoSangreId = tipo_sangre_id === "" ? null : tipo_sangre_id;
+            await client.query(updatePatientProfileQuery, [alergias, dbTipoSangreId, usuarioId]);
+        }
+        
         await client.query('COMMIT');
 
-        const { rows } = await client.query('SELECT * FROM usuarios WHERE id = $1', [usuarioId]);
-        res.status(200).json(rows[0]);
+        const updatedProfile = await client.query('SELECT * FROM usuarios WHERE id = $1', [usuarioId]);
+        const finalProfile = updatedProfile.rows[0];
+        delete finalProfile.password_hash;
+
+        if (finalProfile.rol_id === 5) {
+             const patientProfileResult = await client.query(
+                'SELECT alergias, tipo_sangre_id FROM perfiles_pacientes WHERE usuario_id = $1',
+                [usuarioId]
+            );
+            if (patientProfileResult.rowCount > 0) {
+                finalProfile.alergias = patientProfileResult.rows[0].alergias;
+                finalProfile.grupo_sanguineo = patientProfileResult.rows[0].tipo_sangre_id;
+            }
+        }
+        
+        res.status(200).json(finalProfile);
 
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error al actualizar el perfil del paciente:', error);
+        console.error('Error al actualizar el perfil:', error);
         res.status(500).json({ message: 'Error interno del servidor al actualizar el perfil.' });
     } finally {
         client.release();
