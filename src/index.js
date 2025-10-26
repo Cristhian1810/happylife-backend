@@ -12,6 +12,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import clinicaRoutes from './routes/clinica.routes.js';
 import horarioRoutes from './routes/horario.routes.js';
 import pacientes_doctorRoutes from './routes/pacientes_doctor.routes.js';
+import citas_pacientesRoutes from './routes/citas_pacientes.routes.js';
 import morgan from 'morgan';
 import cors from 'cors';
 
@@ -54,6 +55,7 @@ app.use(dashboardRoutes);
 app.use(clinicaRoutes);
 app.use(horarioRoutes);
 app.use(pacientes_doctorRoutes);
+app.use(citas_pacientesRoutes);
 
 app.listen(PORT, () => {
     console.log('Server on port', PORT);
