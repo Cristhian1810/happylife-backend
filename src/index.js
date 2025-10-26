@@ -10,6 +10,7 @@ import catalogosRoutes from './routes/catalogos.routes.js';
 import supervisionRoutes from './routes/supervision.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import clinicaRoutes from './routes/clinica.routes.js';
+import horarioRoutes from './routes/horario.routes.js';
 import morgan from 'morgan';
 import cors from 'cors';
 
@@ -50,6 +51,7 @@ app.use(recepcionistaRoutes);
 app.use(supervisionRoutes);
 app.use(dashboardRoutes);
 app.use(clinicaRoutes);
+app.use(horarioRoutes);
 
 app.listen(PORT, () => {
     console.log('Server on port', PORT);
