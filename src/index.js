@@ -5,6 +5,7 @@ import pacientesRoutes from './routes/pacientes.routes.js';
 import administradoresRoutes from './routes/administradores.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import doctoresRoutes from './routes/doctores.routes.js';
+import recepcionistaRoutes from './routes/recepcionistas.routes.js';
 import catalogosRoutes from './routes/catalogos.routes.js';
 import morgan from 'morgan';
 import cors from 'cors';
@@ -42,6 +43,7 @@ app.use(administradoresRoutes);
 app.use(authRoutes);
 app.use(catalogosRoutes);
 app.use(doctoresRoutes);
+app.use(recepcionistaRoutes);
 
 app.listen(PORT, () => {
     console.log('Server on port', PORT);
