@@ -4,6 +4,7 @@ import { PORT } from './config.js';
 import pacientesRoutes from './routes/pacientes.routes.js';
 import administradoresRoutes from './routes/administradores.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import doctoresRoutes from './routes/doctores.routes.js';
 import catalogosRoutes from './routes/catalogos.routes.js';
 import morgan from 'morgan';
 import cors from 'cors';

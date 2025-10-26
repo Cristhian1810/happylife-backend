@@ -13,4 +13,25 @@ router.get('/tipo-sangre', async (req, res) => {
     res.json(rows);
 });
 
+router.get('/especialidades', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT id, nombre FROM especialidades ORDER BY nombre ASC');
+        res.json(rows);
+    } catch (error) {
+        console.error('Error al obtener especialidades:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+});
+
+// OBTENER TODOS LOS TÍTULOS PROFESIONALES
+router.get('/titulos-profesionales', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT id, nombre FROM titulos_profesionales ORDER BY nombre ASC');
+        res.json(rows);
+    } catch (error) {
+        console.error('Error al obtener títulos:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+});
+
 export default router;
