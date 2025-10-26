@@ -18,7 +18,8 @@ router.get('/doctores', async (req, res) => {
             LEFT JOIN doctores_especialidades de ON u.id = de.doctor_usuario_id
             LEFT JOIN especialidades e ON de.especialidad_id = e.id
             WHERE u.rol_id = 3
-            GROUP BY u.id, pd.numero_colegiatura, tp.nombre, tp.id
+            -- 👇 LÍNEA CORREGIDA 👇
+            GROUP BY u.id, pd.usuario_id, tp.id
             ORDER BY u.nombres ASC
         `);
         res.json(rows);
