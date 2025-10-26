@@ -33,4 +33,14 @@ router.get('/titulos-profesionales', async (req, res) => {
     }
 });
 
+router.get('/estados-cita', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT id, nombre FROM estados_cita ORDER BY id');
+        res.json(rows);
+    } catch (error) {
+        console.error('Error al obtener estados de cita:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
+});
+
 export default router;
