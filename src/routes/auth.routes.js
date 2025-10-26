@@ -76,7 +76,6 @@ router.delete('/perfil/eliminar', async (req, res) => {
         }
         
         const storedHash = userResult.rows[0].password_hash;
-
         const isMatch = await bcrypt.compare(password_actual, storedHash);
 
         if (!isMatch) {
