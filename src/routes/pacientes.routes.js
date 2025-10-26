@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 
-router.get('/perfil', async (req, res) => {
+router.get('/pacientes', async (req, res) => {
     if (!req.session.userId) {
         return res.status(401).json({ message: 'No estás autenticado.' });
     }
@@ -38,12 +38,6 @@ router.get('/perfil', async (req, res) => {
         console.error('Error al obtener el perfil:', error);
         res.status(500).json({ message: 'Error interno del servidor.' });
     }
-});
-
-
-router.get('/pacientes', async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM usuarios WHERE rol_id = 5 ORDER BY nombres ASC');
-    res.json(rows);
 });
 
 router.get('/pacientes/:id', async (req, res) => {
@@ -168,43 +162,6 @@ router.put('/perfil/actualizar', async (req, res) => {
         res.status(500).json({ message: 'Error interno del servidor al actualizar el perfil.' });
     } finally {
         client.release();
-    }
-});
-
-router.put('/perfil/cambiar-password', async (req, res) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ message: 'No estás autenticado.' });
-    }
-
-    const { password_actual, nueva_password } = req.body;
-    const usuarioId = req.session.userId;
-
-    if (!password_actual || !nueva_password) {
-        return res.status(400).json({ message: 'Todos los campos son requeridos.' });
-    }
-
-    try {
-        const result = await pool.query('SELECT password_hash FROM usuarios WHERE id = $1', [usuarioId]);
-        if (result.rowCount === 0) {
-            return res.status(404).json({ message: 'Usuario no encontrado.' });
-        }
-        const storedHash = result.rows[0].password_hash;
-
-        const isMatch = await bcrypt.compare(password_actual, storedHash);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'La contraseña actual es incorrecta.' });
-        }
-
-        const salt = await bcrypt.genSalt(10);
-        const newHashedPassword = await bcrypt.hash(nueva_password, salt);
-
-        await pool.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [newHashedPassword, usuarioId]);
-
-        res.status(200).json({ message: 'Contraseña actualizada correctamente.' });
-
-    } catch (error) {
-        console.error('Error al cambiar la contraseña:', error);
-        res.status(500).json({ message: 'Error interno del servidor al cambiar la contraseña.' });
     }
 });
 
