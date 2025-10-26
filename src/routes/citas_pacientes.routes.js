@@ -74,7 +74,10 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
         }
         
         const citasAgendadasRes = await pool.query(
-            "SELECT fecha_hora_inicio FROM citas WHERE doctor_usuario_id = $1 AND DATE(fecha_hora_inicio AT TIME ZONE 'UTC') = $2 AND estado_cita_id != 4",
+            `SELECT fecha_hora_inicio FROM citas 
+             WHERE doctor_usuario_id = $1 
+             AND CAST(fecha_hora_inicio AT TIME ZONE 'America/Lima' AS DATE) = $2
+             AND estado_cita_id != 4`,
             [doctorId, fecha]
         );
         const citasOcupadas = new Set(citasAgendadasRes.rows.map(c => new Date(c.fecha_hora_inicio).toISOString()));
