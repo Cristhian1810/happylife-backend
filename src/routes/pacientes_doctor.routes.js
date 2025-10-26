@@ -25,11 +25,15 @@ router.get('/mis-pacientes', isDoctor, async (req, res) => {
                 p.email,
                 p.telefono,
                 p.fecha_nacimiento,
+                pp.alergias,
+                ts.nombre AS tipo_sangre_nombre,
                 -- Subconsulta para obtener la fecha de la última cita con ESTE doctor
                 (SELECT MAX(c2.fecha_hora_inicio)
                  FROM citas c2
                  WHERE c2.paciente_usuario_id = p.id AND c2.doctor_usuario_id = $1) AS ultima_cita
             FROM usuarios p
+            JOIN perfiles_pacientes pp ON p.id = pp.usuario_id
+            LEFT JOIN tipo_sangre ts ON pp.tipo_sangre_id = ts.id
             -- Unimos con citas para encontrar solo pacientes que han tenido cita con este doctor
             JOIN citas c ON p.id = c.paciente_usuario_id
             WHERE c.doctor_usuario_id = $1
@@ -47,6 +51,15 @@ router.get('/mis-pacientes/:pacienteId/historial', isDoctor, async (req, res) =>
     const { pacienteId } = req.params;
     const doctorId = req.session.userId;
     try {
+        const patientBelongsToDoctor = await pool.query(
+            "SELECT COUNT(*) FROM citas WHERE paciente_usuario_id = $1 AND doctor_usuario_id = $2",
+            [pacienteId, doctorId]
+        );
+        
+        if (patientBelongsToDoctor.rows[0].count === '0') {
+            return res.status(403).json({ message: "El paciente no es de su historial." });
+        }
+
         const { rows } = await pool.query(`
             SELECT 
                 hm.id,
@@ -54,11 +67,16 @@ router.get('/mis-pacientes/:pacienteId/historial', isDoctor, async (req, res) =>
                 hm.receta_medica,
                 hm.notas_doctor,
                 hm.fecha_creacion,
-                c.fecha_hora_inicio as fecha_cita
+                c.fecha_hora_inicio as fecha_cita,
+                u_doc.nombres || ' ' || u_doc.apellidos as nombre_doctor,
+                e.nombre as especialidad -- Unir para obtener la especialidad de la cita
             FROM historiales_medicos hm
             JOIN citas c ON hm.cita_id = c.id
+            JOIN usuarios u_doc ON c.doctor_usuario_id = u_doc.id
+            LEFT JOIN doctores_especialidades de ON u_doc.id = de.doctor_usuario_id
+            LEFT JOIN especialidades e ON de.especialidad_id = e.id
             WHERE hm.paciente_usuario_id = $1 
-              AND c.doctor_usuario_id = $2 -- Asegura que el doctor solo vea registros de sus propias citas
+             AND c.doctor_usuario_id = $2 -- Asegura que el doctor solo vea registros de sus propias citas
             ORDER BY hm.fecha_creacion DESC
         `, [pacienteId, doctorId]);
         res.json(rows);
@@ -85,7 +103,7 @@ router.post('/historial-medico', isDoctor, async (req, res) => {
         res.status(201).json({ message: "Historial guardado con éxito.", entry: rows[0] });
     } catch (error) {
         console.error("Error al crear historial:", error);
-         if (error.code === '23505') { // Cita_id ya tiene un historial
+        if (error.code === '23505') { // Cita_id ya tiene un historial
             return res.status(409).json({ message: "Ya existe un registro de historial para esta cita." });
         }
         res.status(500).json({ message: "Error interno del servidor." });
