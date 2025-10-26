@@ -15,6 +15,7 @@ router.post('/login', async (req, res) => {
 
     if (usuario) {
         req.session.userId = usuario.id; 
+        req.session.rolId = usuario.rol_id;
 
         req.session.save(err => {
             if (err) {
