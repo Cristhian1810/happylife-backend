@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 
 const router = Router();
+const TIMEZONE_OFFSET = "-05:00";
 
 const isPatient = (req, res, next) => {
     if (!req.session || !req.session.userId) {
@@ -39,11 +40,10 @@ router.get('/agendar/doctores/:especialidadId', async (req, res) => {
 router.get('/agendar/horario/:doctorId', async (req, res) => {
     const { doctorId } = req.params;
     const { fecha } = req.query;
-
     if (!fecha) return res.status(400).json({ message: "La fecha es requerida." });
 
     try {
-        const diaSemana = new Date(fecha + 'T12:00:00Z').getUTCDay();
+        const diaSemana = new Date(fecha + 'T12:00:00').getUTCDay();
 
         const excepcionRes = await pool.query(
             "SELECT * FROM excepciones_horarios WHERE doctor_usuario_id = $1 AND fecha_excepcion = $2",
@@ -55,10 +55,12 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
         if (excepcionRes.rows.length > 0) {
             const ex = excepcionRes.rows[0];
             if (!ex.esta_disponible) return res.json([]);
-            
             horaInicioStr = ex.hora_inicio;
             horaFinStr = ex.hora_fin;
-            const horarioNormalRes = await pool.query("SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1", [doctorId]);
+            const horarioNormalRes = await pool.query(
+                "SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1",
+                [doctorId]
+            );
             duracionCita = horarioNormalRes.rows.length > 0 ? horarioNormalRes.rows[0].duracion_cita_minutos : 30;
         } else {
             const horarioRes = await pool.query(
@@ -66,38 +68,36 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
                 [doctorId, diaSemana]
             );
             if (horarioRes.rows.length === 0) return res.json([]);
-            
-            const horario = horarioRes.rows[0];
-            horaInicioStr = horario.hora_inicio;
-            horaFinStr = horario.hora_fin;
-            duracionCita = horario.duracion_cita_minutos;
+            ({ hora_inicio: horaInicioStr, hora_fin: horaFinStr, duracion_cita_minutos: duracionCita } = horarioRes.rows[0]);
         }
-        
+
         const citasAgendadasRes = await pool.query(
-            `SELECT fecha_hora_inicio FROM citas 
-             WHERE doctor_usuario_id = $1 
-             AND CAST(fecha_hora_inicio AT TIME ZONE 'America/Lima' AS DATE) = $2
+            `SELECT fecha_hora_inicio FROM citas
+             WHERE doctor_usuario_id = $1
+             AND DATE(fecha_hora_inicio) = $2
              AND estado_cita_id != 4`,
             [doctorId, fecha]
         );
-        const citasOcupadas = new Set(citasAgendadasRes.rows.map(c => new Date(c.fecha_hora_inicio).toISOString()));
+
+        const citasOcupadas = new Set(
+            citasAgendadasRes.rows.map(c =>
+                new Date(c.fecha_hora_inicio + TIMEZONE_OFFSET).toISOString()
+            )
+        );
 
         const slotsDisponibles = [];
-        const startDateTime = new Date(`${fecha}T${horaInicioStr}`);
-        const endDateTime = new Date(`${fecha}T${horaFinStr}`);
-
-        let slotActual = startDateTime;
+        let slotActual = new Date(`${fecha}T${horaInicioStr}${TIMEZONE_OFFSET}`);
+        const endDateTime = new Date(`${fecha}T${horaFinStr}${TIMEZONE_OFFSET}`);
 
         while (slotActual < endDateTime) {
             const slotISO = slotActual.toISOString();
             if (!citasOcupadas.has(slotISO)) {
                 slotsDisponibles.push(slotISO);
             }
-            slotActual.setMinutes(slotActual.getMinutes() + duracionCita);
+            slotActual = new Date(slotActual.getTime() + duracionCita * 60000);
         }
-        
-        res.json(slotsDisponibles);
 
+        res.json(slotsDisponibles);
     } catch (error) {
         console.error("Error al calcular horarios:", error);
         res.status(500).json({ message: "Error interno del servidor." });
@@ -109,9 +109,12 @@ router.post('/citas', isPatient, async (req, res) => {
     const { doctor_usuario_id, fecha_hora_inicio, motivo_consulta } = req.body;
 
     try {
-        const duracionRes = await pool.query("SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1", [doctor_usuario_id]);
+        const duracionRes = await pool.query(
+            "SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1",
+            [doctor_usuario_id]
+        );
         const duracion = duracionRes.rows.length > 0 ? duracionRes.rows[0].duracion_cita_minutos : 30;
-        
+
         const fechaInicio = new Date(fecha_hora_inicio);
         const fechaFin = new Date(fechaInicio.getTime() + duracion * 60000);
 
@@ -135,7 +138,7 @@ router.get('/mis-citas', isPatient, async (req, res) => {
     const pacienteId = req.session.userId;
     try {
         const { rows } = await pool.query(`
-            SELECT c.id, c.fecha_hora_inicio, c.motivo_consulta, u.nombres || ' ' || u.apellidos as doctor, ec.nombre as estado
+            SELECT c.id, c.fecha_hora_inicio, c.motivo_consulta, u.nombres || ' ' || u.apellidos AS doctor, ec.nombre AS estado
             FROM citas c
             JOIN usuarios u ON c.doctor_usuario_id = u.id
             JOIN estados_cita ec ON c.estado_cita_id = ec.id
@@ -154,12 +157,11 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
     const { citaId } = req.params;
     try {
         const { rowCount } = await pool.query(
-            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id IN (1, 2) AND fecha_hora_inicio > NOW()", // 4 = 'Cancelada'
+            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id IN (1, 2) AND fecha_hora_inicio > NOW()",
             [citaId, pacienteId]
         );
-
         if (rowCount === 0) {
-            return res.status(404).json({ message: "La cita no se pudo cancelar. Puede que ya haya pasado o ya esté cancelada." });
+            return res.status(404).json({ message: "La cita no se pudo cancelar." });
         }
         res.status(200).json({ message: "Cita cancelada correctamente." });
     } catch (error) {
@@ -172,12 +174,9 @@ router.get('/mi-historial', isPatient, async (req, res) => {
     const pacienteId = req.session.userId;
     try {
         const { rows } = await pool.query(`
-            SELECT
-                hm.diagnostico,
-                hm.receta_medica,
-                hm.notas_doctor,
-                c.fecha_hora_inicio as fecha_cita,
-                u.nombres || ' ' || u.apellidos as doctor_nombre
+            SELECT hm.diagnostico, hm.receta_medica, hm.notas_doctor,
+                   c.fecha_hora_inicio AS fecha_cita,
+                   u.nombres || ' ' || u.apellidos AS doctor_nombre
             FROM historiales_medicos hm
             JOIN citas c ON hm.cita_id = c.id
             JOIN usuarios u ON c.doctor_usuario_id = u.id
