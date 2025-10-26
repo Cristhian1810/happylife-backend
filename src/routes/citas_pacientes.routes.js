@@ -72,7 +72,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
             horaFinStr = horario.hora_fin;
             duracionCita = horario.duracion_cita_minutos;
         }
-
+        
         const citasAgendadasRes = await pool.query(
             `SELECT fecha_hora_inicio FROM citas 
              WHERE doctor_usuario_id = $1 
