@@ -8,6 +8,7 @@ import doctoresRoutes from './routes/doctores.routes.js';
 import recepcionistaRoutes from './routes/recepcionistas.routes.js';
 import catalogosRoutes from './routes/catalogos.routes.js';
 import supervisionRoutes from './routes/supervision.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
 import morgan from 'morgan';
 import cors from 'cors';
 
@@ -46,6 +47,7 @@ app.use(catalogosRoutes);
 app.use(doctoresRoutes);
 app.use(recepcionistaRoutes);
 app.use(supervisionRoutes);
+app.use(dashboardRoutes);
 
 app.listen(PORT, () => {
     console.log('Server on port', PORT);
