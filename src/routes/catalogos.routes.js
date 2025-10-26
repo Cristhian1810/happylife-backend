@@ -8,4 +8,9 @@ router.get('/generos', async (req, res) => {
     res.json(rows);
 });
 
+router.get('/tipo-sangre', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM tipo_sangre');
+    res.json(rows);
+});
+
 export default router;
