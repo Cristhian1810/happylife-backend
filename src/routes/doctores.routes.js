@@ -4,7 +4,6 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 
-// OBTENER TODOS LOS DOCTORES
 router.get('/doctores', async (req, res) => {
     try {
         const { rows } = await pool.query(`
@@ -29,7 +28,6 @@ router.get('/doctores', async (req, res) => {
     }
 });
 
-// OBTENER UN DOCTOR POR ID
 router.get('/doctores/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -53,11 +51,9 @@ router.get('/doctores/:id', async (req, res) => {
     }
 });
 
-// CREAR UN NUEVO DOCTOR
 router.post('/doctores', async (req, res) => {
     const { nombres, apellidos, dni, email, password, telefono, numero_colegiatura, biografia, titulo_profesional_id, especialidades } = req.body;
     
-    // Validaciones
     if (!especialidades || !Array.isArray(especialidades) || especialidades.length === 0) {
         return res.status(400).json({ message: 'Debe seleccionar al menos una especialidad.' });
     }
@@ -99,7 +95,6 @@ router.post('/doctores', async (req, res) => {
     }
 });
 
-// ACTUALIZAR UN DOCTOR
 router.put('/doctores/:id', async (req, res) => {
     const { id } = req.params;
     const { nombres, apellidos, dni, email, telefono, esta_activo, numero_colegiatura, biografia, titulo_profesional_id, especialidades } = req.body;
@@ -149,7 +144,6 @@ router.put('/doctores/:id', async (req, res) => {
     }
 });
 
-// DESACTIVAR UN DOCTOR
 router.delete('/doctores/:id', async (req, res) => {
     const { id } = req.params;
     try {

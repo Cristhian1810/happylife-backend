@@ -41,6 +41,7 @@ app.use(pacientesRoutes);
 app.use(administradoresRoutes);
 app.use(authRoutes);
 app.use(catalogosRoutes);
+app.use(doctoresRoutes);
 
 app.listen(PORT, () => {
     console.log('Server on port', PORT);

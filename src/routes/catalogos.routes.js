@@ -23,7 +23,6 @@ router.get('/especialidades', async (req, res) => {
     }
 });
 
-// OBTENER TODOS LOS TÍTULOS PROFESIONALES
 router.get('/titulos-profesionales', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT id, nombre FROM titulos_profesionales ORDER BY nombre ASC');
