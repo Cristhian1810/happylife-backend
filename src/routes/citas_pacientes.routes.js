@@ -43,7 +43,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
     if (!fecha) return res.status(400).json({ message: "La fecha es requerida." });
 
     try {
-        const diaSemana = new Date(fecha).getUTCDay();
+        const diaSemana = new Date(fecha + 'T00:00:00').getUTCDay();
 
         const excepcionRes = await pool.query(
             "SELECT * FROM excepciones_horarios WHERE doctor_usuario_id = $1 AND fecha_excepcion = $2",
@@ -54,9 +54,8 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
 
         if (excepcionRes.rows.length > 0) {
             const ex = excepcionRes.rows[0];
-            if (!ex.esta_disponible) {
-                return res.json([]);
-            }
+            if (!ex.esta_disponible) return res.json([]);
+            
             horaInicioStr = ex.hora_inicio;
             horaFinStr = ex.hora_fin;
             const horarioNormalRes = await pool.query("SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1", [doctorId]);
@@ -66,33 +65,27 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
                 "SELECT hora_inicio, hora_fin, duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 AND dia_semana = $2",
                 [doctorId, diaSemana]
             );
-
-            if (horarioRes.rows.length === 0) {
-                return res.json([]);
-            }
+            if (horarioRes.rows.length === 0) return res.json([]);
+            
             const horario = horarioRes.rows[0];
             horaInicioStr = horario.hora_inicio;
             horaFinStr = horario.hora_fin;
             duracionCita = horario.duracion_cita_minutos;
         }
-
+        
         const citasAgendadasRes = await pool.query(
-            "SELECT fecha_hora_inicio FROM citas WHERE doctor_usuario_id = $1 AND DATE(fecha_hora_inicio) = $2",
+            "SELECT fecha_hora_inicio FROM citas WHERE doctor_usuario_id = $1 AND DATE(fecha_hora_inicio) = $2 AND estado_cita_id != 4",
             [doctorId, fecha]
         );
         const citasOcupadas = new Set(citasAgendadasRes.rows.map(c => new Date(c.fecha_hora_inicio).toISOString()));
 
         const slotsDisponibles = [];
-        const [hI, mI] = horaInicioStr.split(':').map(Number);
-        const [hF, mF] = horaFinStr.split(':').map(Number);
-        
-        let slotActual = new Date(fecha);
-        slotActual.setUTCHours(hI, mI, 0, 0);
+        const startDateTime = new Date(`${fecha}T${horaInicioStr}:00`);
+        const endDateTime = new Date(`${fecha}T${horaFinStr}:00`);
 
-        let finJornada = new Date(fecha);
-        finJornada.setUTCHours(hF, mF, 0, 0);
-        
-        while (slotActual < finJornada) {
+        let slotActual = startDateTime;
+
+        while (slotActual < endDateTime) {
             const slotISO = slotActual.toISOString();
             if (!citasOcupadas.has(slotISO)) {
                 slotsDisponibles.push(slotISO);
@@ -108,6 +101,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
     }
 });
 
+
 router.post('/citas', isPatient, async (req, res) => {
     const pacienteId = req.session.userId;
     const { doctor_usuario_id, fecha_hora_inicio, motivo_consulta } = req.body;
@@ -121,7 +115,7 @@ router.post('/citas', isPatient, async (req, res) => {
 
         const { rows } = await pool.query(
             `INSERT INTO citas (paciente_usuario_id, doctor_usuario_id, fecha_hora_inicio, fecha_hora_fin, estado_cita_id, motivo_consulta)
-             VALUES ($1, $2, $3, $4, 1, $5) RETURNING id`,
+             VALUES ($1, $2, $3, $4, 1, $5) RETURNING id`, // Estado 1 = 'Programada'
             [pacienteId, doctor_usuario_id, fechaInicio, fechaFin, motivo_consulta]
         );
 
@@ -158,12 +152,12 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
     const { citaId } = req.params;
     try {
         const { rowCount } = await pool.query(
-            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND fecha_hora_inicio > NOW()", // Estado 4 = 'Cancelada'
+            "UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id IN (1, 2) AND fecha_hora_inicio > NOW()", // 4 = 'Cancelada', solo se puede cancelar si está programada (1) o confirmada (2)
             [citaId, pacienteId]
         );
 
         if (rowCount === 0) {
-            return res.status(404).json({ message: "La cita no se pudo cancelar. Puede que no exista, ya haya pasado, o no te pertenezca." });
+            return res.status(404).json({ message: "La cita no se pudo cancelar. Puede que ya haya pasado o ya esté cancelada." });
         }
         res.status(200).json({ message: "Cita cancelada correctamente." });
     } catch (error) {
