@@ -7,7 +7,7 @@ const isDoctor = (req, res, next) => {
     if (!req.session || !req.session.userId) {
         return res.status(401).json({ message: "No autenticado." });
     }
-    if (req.session.rolId !== 3) { // Asumiendo que 3 es el rol de Doctor
+    if (req.session.rolId !== 3) {
         return res.status(403).json({ message: "Acceso no autorizado." });
     }
     next();

@@ -42,8 +42,13 @@ router.get('/perfil', async (req, res) => {
 
 
 router.get('/pacientes', async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM usuarios WHERE rol_id = 5 ORDER BY nombres ASC');
-    res.json(rows);
+    try {
+        const { rows } = await pool.query('SELECT id, nombres, apellidos, dni, email, telefono, fecha_nacimiento FROM usuarios WHERE rol_id = 5 ORDER BY nombres ASC');
+        res.json(rows);
+    } catch (error) {
+        console.error('Error al obtener pacientes:', error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
+    }
 });
 
 router.get('/pacientes/:id', async (req, res) => {
@@ -55,6 +60,10 @@ router.get('/pacientes/:id', async (req, res) => {
 router.post('/pacientes', async (req, res) => {
     try {
         const { nombres, apellidos, dni, email, password, telefono, fechaNacimiento, genero } = req.body;
+
+        if (!nombres || !apellidos || !dni || !email || !password) {
+            return res.status(400).json({ message: 'Los campos nombres, apellidos, DNI, email y contraseña son obligatorios.' });
+        }
 
         const existingUser = await pool.query(
             'SELECT * FROM usuarios WHERE email = $1 OR dni = $2',
@@ -75,7 +84,7 @@ router.post('/pacientes', async (req, res) => {
 
         const { rows } = await pool.query(
             'INSERT INTO usuarios (email, password_hash, dni, nombres, apellidos, telefono, fecha_nacimiento, genero_id, rol_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 5) RETURNING id',
-            [email, hashedPassword, dni, nombres, apellidos, telefono, fechaNacimiento, genero]
+            [email, hashedPassword, dni, nombres, apellidos, telefono, fechaNacimiento || null, genero || null]
         );
         const usuarioId = rows[0].id;
 
