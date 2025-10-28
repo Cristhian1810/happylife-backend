@@ -37,7 +37,7 @@ app.use(session({
 }));
 
 app.use(cors({
-    origin: 'https://happylife-gamma.vercel.app',
+    origin: 'http://127.0.0.1:5500',
     credentials: true
 }));
 
