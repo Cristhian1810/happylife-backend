@@ -98,7 +98,7 @@ router.post('/doctores', async (req, res) => {
 
 router.put('/doctores/:id', async (req, res) => {
     const { id } = req.params;
-    const { nombres, apellidos, dni, email, telefono, esta_activo, numero_colegiatura, biografia, titulo_profesional_id, especialidades } = req.body;
+    const { nombres, apellidos, email, telefono, esta_activo, numero_colegiatura, biografia, titulo_profesional_id, especialidades } = req.body;
 
     if (!especialidades || !Array.isArray(especialidades) || especialidades.length === 0) {
         return res.status(400).json({ message: 'Debe seleccionar al menos una especialidad.' });
@@ -108,16 +108,22 @@ router.put('/doctores/:id', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const existingUser = await client.query('SELECT id FROM usuarios WHERE (email = $1 OR dni = $2) AND id != $3', [email, dni, id]);
+        const existingUser = await client.query('SELECT id FROM usuarios WHERE email = $1 AND id != $2', [email, id]);
         if (existingUser.rowCount > 0) {
-             return res.status(409).json({ message: 'El correo electrónico o DNI ya está en uso por otro usuario.' });
+             return res.status(409).json({ message: 'El correo electrónico ya está en uso por otro usuario.' });
         }
 
-        const updateUserQuery = `UPDATE usuarios SET nombres = $1, apellidos = $2, dni = $3, email = $4, telefono = $5, esta_activo = COALESCE($6, esta_activo) WHERE id = $7 AND rol_id = 3 RETURNING id`;
-        const userResult = await client.query(updateUserQuery, [nombres, apellidos, dni, email, telefono, esta_activo, id]);
+        const updateUserQuery = `
+            UPDATE usuarios 
+            SET nombres = $1, apellidos = $2, email = $3, telefono = $4, esta_activo = COALESCE($5, esta_activo) 
+            WHERE id = $6 AND rol_id = 3 
+            RETURNING id
+        `;
+        const userResult = await client.query(updateUserQuery, [nombres, apellidos, email, telefono, esta_activo, id]);
         
         if (userResult.rowCount === 0) {
-            throw new Error('Doctor no encontrado.');
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Doctor no encontrado.' });
         }
 
         const updateProfileQuery = `UPDATE perfiles_doctores SET numero_colegiatura = $1, biografia = $2, titulo_profesional_id = $3 WHERE usuario_id = $4`;
@@ -136,9 +142,6 @@ router.put('/doctores/:id', async (req, res) => {
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Error al actualizar doctor:', error);
-        if (error.message === 'Doctor no encontrado.') {
-            return res.status(404).json({ message: 'Doctor no encontrado.' });
-        }
         res.status(500).json({ message: 'Error interno del servidor.' });
     } finally {
         client.release();
