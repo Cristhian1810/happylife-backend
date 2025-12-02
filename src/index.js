@@ -18,6 +18,11 @@ import cors from 'cors';
 
 const app = express();
 
+console.log('------------------------------------------------');
+console.log(`Modo actual: ${process.env.NODE_ENV}`);
+console.log(`¿Es producción?: ${process.env.NODE_ENV === 'production'}`);
+console.log('------------------------------------------------');
+
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
@@ -31,8 +36,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'none' : 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: 1000 * 60 * 60 * 24,
     },
   })
