@@ -24,22 +24,26 @@ app.set('trust proxy', 1);
 
 app.get('/favicon.ico', (req, res) => res.status(204));
 
-app.use(session({
+app.use(
+  session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
-        maxAge: 1000 * 60 * 60 * 24
-    }
-}));
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 1000 * 60 * 60 * 24,
+    },
+  })
+);
 
-app.use(cors({
-    origin: 'http://127.0.0.1:5500',
-    credentials: true
-}));
+app.use(
+  cors({
+    origin: ['http://127.0.0.1:5500', 'https://happylife-gamma.vercel.app'],
+    credentials: true,
+  })
+);
 
 app.use(morgan('dev'));
 app.use(express.json());
@@ -58,5 +62,5 @@ app.use(pacientes_doctorRoutes);
 app.use(citas_pacientesRoutes);
 
 app.listen(PORT, () => {
-    console.log('Server on port', PORT);
+  console.log('Server on port', PORT);
 });
