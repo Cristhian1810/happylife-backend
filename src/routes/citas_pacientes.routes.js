@@ -136,11 +136,13 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
   }
 });
 
+// MODIFICADO: Incluye validación de máx. 2 citas y buffer de 30 minutos
 router.post('/citas', isPatient, async (req, res) => {
   const pacienteId = req.session.userId;
   const { doctor_usuario_id, fecha_hora_inicio, motivo_consulta } = req.body;
 
   try {
+    // 1. Obtener duración de la cita para el doctor seleccionado
     const duracionRes = await pool.query(
       'SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1',
       [doctor_usuario_id]
@@ -153,23 +155,75 @@ router.post('/citas', isPatient, async (req, res) => {
     const fechaInicio = new Date(fecha_hora_inicio);
     const fechaFin = new Date(fechaInicio.getTime() + duracion * 60000);
 
-    const cruceCitas = await pool.query(
+    // 2. VALIDACIÓN: Máximo 2 citas por día para este paciente
+    // Usamos DATE() para comparar el día sin importar la hora.
+    const citasDelDiaRes = await pool.query(
+      `SELECT count(*) FROM citas 
+       WHERE paciente_usuario_id = $1 
+       AND DATE(fecha_hora_inicio) = DATE($2) 
+       AND estado_cita_id != 4`, // Ignoramos las canceladas
+      [pacienteId, fechaInicio]
+    );
+
+    if (parseInt(citasDelDiaRes.rows[0].count) >= 2) {
+      return res.status(400).json({
+        message:
+          'Has alcanzado el límite de 2 citas para este día. No puedes agendar más.',
+      });
+    }
+
+    // 3. VALIDACIÓN: Buffer de 30 minutos entre citas del paciente
+    // Traemos todas las citas activas del paciente para ese día
+    const citasPacienteRes = await pool.query(
+      `SELECT fecha_hora_inicio, fecha_hora_fin FROM citas 
+       WHERE paciente_usuario_id = $1 
+       AND estado_cita_id != 4
+       AND DATE(fecha_hora_inicio) = DATE($2)`,
+      [pacienteId, fechaInicio]
+    );
+
+    const BUFFER_MS = 30 * 60 * 1000; // 30 minutos en milisegundos
+
+    for (const cita of citasPacienteRes.rows) {
+      const citaExistenteInicio = new Date(cita.fecha_hora_inicio).getTime();
+      const citaExistenteFin = new Date(cita.fecha_hora_fin).getTime();
+      const nuevaInicio = fechaInicio.getTime();
+      const nuevaFin = fechaFin.getTime();
+
+      // Comprobamos si la nueva cita "choca" con el rango de la existente + el buffer.
+      // La lógica es: Hay conflicto si la nueva cita empieza antes de que termine la existente + 30min
+      // Y termina después de que empiece la existente - 30min.
+
+      const limiteInferior = citaExistenteInicio - BUFFER_MS;
+      const limiteSuperior = citaExistenteFin + BUFFER_MS;
+
+      if (nuevaInicio < limiteSuperior && nuevaFin > limiteInferior) {
+        return res.status(400).json({
+          message:
+            'Debe haber un espacio de al menos 30 minutos entre tus citas para trasladarte.',
+        });
+      }
+    }
+
+    // 4. Verificar disponibilidad del Doctor (Que no tenga otra cita en ese horario exacto)
+    const cruceCitasDoctor = await pool.query(
       `SELECT id FROM citas 
-             WHERE paciente_usuario_id = $1 
+             WHERE doctor_usuario_id = $1 
              AND estado_cita_id != 4 
              AND (
                 (fecha_hora_inicio < $3 AND fecha_hora_fin > $2)
              )`,
-      [pacienteId, fechaInicio, fechaFin]
+      [doctor_usuario_id, fechaInicio, fechaFin]
     );
 
-    if (cruceCitas.rows.length > 0) {
+    if (cruceCitasDoctor.rows.length > 0) {
       return res.status(400).json({
         message:
-          'Ya tienes otra cita agendada en este horario o que se solapa.',
+          'El doctor ya tiene una cita agendada en este horario o se solapa.',
       });
     }
 
+    // 5. Insertar la cita
     const { rows } = await pool.query(
       `INSERT INTO citas (paciente_usuario_id, doctor_usuario_id, fecha_hora_inicio, fecha_hora_fin, estado_cita_id, motivo_consulta)
              VALUES ($1, $2, $3, $4, 1, $5) RETURNING id`,

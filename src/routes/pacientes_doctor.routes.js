@@ -94,6 +94,7 @@ router.get(
   }
 );
 
+// MODIFICADO: Validación para no permitir historiales de citas muy antiguas
 router.post('/historial-medico', isDoctor, async (req, res) => {
   const { cita_id, diagnostico, receta_medica, notas_doctor } = req.body;
   const doctorId = req.session.userId;
@@ -132,6 +133,17 @@ router.post('/historial-medico', isDoctor, async (req, res) => {
       });
     }
 
+    // VALIDACIÓN: No permitir registrar si la cita fue hace más de 1 mes (30 días)
+    const limiteAntiguedad = new Date();
+    limiteAntiguedad.setDate(limiteAntiguedad.getDate() - 30);
+
+    if (fechaCita < limiteAntiguedad) {
+      return res.status(400).json({
+        message:
+          'No se puede registrar historial. La cita es demasiado antigua (más de 30 días).',
+      });
+    }
+
     const paciente_usuario_id = cita.paciente_usuario_id;
     const query = `
             INSERT INTO historiales_medicos (cita_id, paciente_usuario_id, diagnostico, receta_medica, notas_doctor)
@@ -163,6 +175,7 @@ router.post('/historial-medico', isDoctor, async (req, res) => {
   }
 });
 
+// MODIFICADO: Filtra citas pasadas de más de 30 días para no mostrarlas en la lista
 router.get(
   '/mis-pacientes/:pacienteId/citas-sin-historial',
   isDoctor,
@@ -178,6 +191,7 @@ router.get(
             WHERE c.doctor_usuario_id = $1
               AND c.paciente_usuario_id = $2
               AND c.fecha_hora_inicio <= NOW() 
+              AND c.fecha_hora_inicio > NOW() - INTERVAL '30 days' -- Solo muestra citas del último mes
               AND hm.id IS NULL
             ORDER BY c.fecha_hora_inicio DESC
         `,
