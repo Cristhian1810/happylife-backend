@@ -29,18 +29,17 @@ router.get('/agendar/especialidades', isPatient, async (req, res) => {
     const generoId = userRes.rows[0].genero_id;
 
     let query = 'SELECT id, nombre FROM especialidades';
-    let params = [];
 
     if (generoId === 1) {
-      query += " WHERE nombre != 'Ginecología y Obstetricia'";
+      query += ' WHERE id != 4';
     }
 
     query += ' ORDER BY nombre ASC';
 
-    const { rows } = await pool.query(query, params);
+    const { rows } = await pool.query(query);
     res.json(rows);
   } catch (error) {
-    console.error(error);
+    console.error('Error al filtrar especialidades:', error);
     res.status(500).json({ message: 'Error al obtener especialidades.' });
   }
 });
@@ -165,12 +164,10 @@ router.post('/citas', isPatient, async (req, res) => {
     );
 
     if (cruceCitas.rows.length > 0) {
-      return res
-        .status(400)
-        .json({
-          message:
-            'Ya tienes otra cita agendada en este horario o que se solapa con este tiempo.',
-        });
+      return res.status(400).json({
+        message:
+          'Ya tienes otra cita agendada en este horario o que se solapa.',
+      });
     }
 
     const { rows } = await pool.query(
@@ -187,10 +184,7 @@ router.post('/citas', isPatient, async (req, res) => {
     if (error.code === '23505') {
       return res
         .status(409)
-        .json({
-          message:
-            'El horario seleccionado ya no está disponible con este doctor.',
-        });
+        .json({ message: 'El horario seleccionado ya no está disponible.' });
     }
     res.status(500).json({ message: 'Error interno del servidor.' });
   }
