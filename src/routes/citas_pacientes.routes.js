@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 
 const router = Router();
 const TIMEZONE_OFFSET = '-05:00';
+const BUFFER_MINUTOS = 30;
 
 const isPatient = (req, res, next) => {
   if (!req.session || !req.session.userId) {
@@ -17,7 +18,6 @@ const isPatient = (req, res, next) => {
 router.get('/agendar/especialidades', isPatient, async (req, res) => {
   try {
     const pacienteId = req.session.userId;
-
     const userRes = await pool.query(
       'SELECT genero_id FROM usuarios WHERE id = $1',
       [pacienteId]
@@ -27,13 +27,11 @@ router.get('/agendar/especialidades', isPatient, async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
 
     const generoId = userRes.rows[0].genero_id;
-
     let query = 'SELECT id, nombre FROM especialidades';
 
     if (generoId === 1) {
       query += ' WHERE id != 4';
     }
-
     query += ' ORDER BY nombre ASC';
 
     const { rows } = await pool.query(query);
@@ -82,6 +80,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
       if (!ex.esta_disponible) return res.json([]);
       horaInicioStr = ex.hora_inicio;
       horaFinStr = ex.hora_fin;
+
       const horarioNormalRes = await pool.query(
         'SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1',
         [doctorId]
@@ -104,29 +103,42 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
     }
 
     const citasAgendadasRes = await pool.query(
-      `SELECT fecha_hora_inicio FROM citas
+      `SELECT fecha_hora_inicio, fecha_hora_fin FROM citas
              WHERE doctor_usuario_id = $1
              AND DATE(fecha_hora_inicio) = $2
              AND estado_cita_id != 4`,
       [doctorId, fecha]
     );
 
-    const citasOcupadas = new Set(
-      citasAgendadasRes.rows.map((c) =>
-        new Date(c.fecha_hora_inicio + TIMEZONE_OFFSET).toISOString()
-      )
-    );
+    const rangosOcupados = citasAgendadasRes.rows.map((c) => ({
+      inicio:
+        new Date(c.fecha_hora_inicio + TIMEZONE_OFFSET).getTime() -
+        BUFFER_MINUTOS * 60000,
+      fin:
+        new Date(c.fecha_hora_fin + TIMEZONE_OFFSET).getTime() +
+        BUFFER_MINUTOS * 60000,
+    }));
 
     const slotsDisponibles = [];
     let slotActual = new Date(`${fecha}T${horaInicioStr}${TIMEZONE_OFFSET}`);
     const endDateTime = new Date(`${fecha}T${horaFinStr}${TIMEZONE_OFFSET}`);
 
+    const pasoTiempo = duracionCita * 60000;
+
     while (slotActual < endDateTime) {
-      const slotISO = slotActual.toISOString();
-      if (!citasOcupadas.has(slotISO)) {
-        slotsDisponibles.push(slotISO);
+      const inicioCitaActual = slotActual.getTime();
+      const finCitaActual = inicioCitaActual + duracionCita * 60000;
+
+      const colision = rangosOcupados.some(
+        (ocupado) =>
+          inicioCitaActual < ocupado.fin && finCitaActual > ocupado.inicio
+      );
+
+      if (!colision && finCitaActual <= endDateTime.getTime()) {
+        slotsDisponibles.push(slotActual.toISOString());
       }
-      slotActual = new Date(slotActual.getTime() + duracionCita * 60000);
+
+      slotActual = new Date(slotActual.getTime() + pasoTiempo);
     }
 
     res.json(slotsDisponibles);
@@ -141,6 +153,23 @@ router.post('/citas', isPatient, async (req, res) => {
   const { doctor_usuario_id, fecha_hora_inicio, motivo_consulta } = req.body;
 
   try {
+    const fechaInicio = new Date(fecha_hora_inicio);
+
+    const citasDelDia = await pool.query(
+      `SELECT COUNT(*) FROM citas 
+         WHERE paciente_usuario_id = $1 
+         AND DATE(fecha_hora_inicio) = DATE($2) 
+         AND estado_cita_id != 4`,
+      [pacienteId, fechaInicio]
+    );
+
+    if (parseInt(citasDelDia.rows[0].count) >= 2) {
+      return res.status(400).json({
+        message:
+          'Has alcanzado el límite máximo de 2 citas permitidas por día.',
+      });
+    }
+
     const duracionRes = await pool.query(
       'SELECT duracion_cita_minutos FROM horarios_doctores WHERE doctor_usuario_id = $1 LIMIT 1',
       [doctor_usuario_id]
@@ -150,23 +179,23 @@ router.post('/citas', isPatient, async (req, res) => {
         ? duracionRes.rows[0].duracion_cita_minutos
         : 30;
 
-    const fechaInicio = new Date(fecha_hora_inicio);
     const fechaFin = new Date(fechaInicio.getTime() + duracion * 60000);
 
     const cruceCitas = await pool.query(
       `SELECT id FROM citas 
-             WHERE paciente_usuario_id = $1 
+             WHERE (paciente_usuario_id = $1 OR doctor_usuario_id = $5)
              AND estado_cita_id != 4 
              AND (
-                (fecha_hora_inicio < $3 AND fecha_hora_fin > $2)
+                (fecha_hora_inicio < ($4 + interval '${BUFFER_MINUTOS} minutes') 
+                 AND fecha_hora_fin > ($3 - interval '${BUFFER_MINUTOS} minutes'))
              )`,
-      [pacienteId, fechaInicio, fechaFin]
+      [pacienteId, fechaInicio, fechaInicio, fechaFin, doctor_usuario_id]
     );
 
     if (cruceCitas.rows.length > 0) {
       return res.status(400).json({
         message:
-          'Ya tienes otra cita agendada en este horario o que se solapa.',
+          'El horario seleccionado no cumple con el intervalo de seguridad de 30 minutos con otra cita.',
       });
     }
 
@@ -216,22 +245,13 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
   const { citaId } = req.params;
   try {
     const { rowCount } = await pool.query(
-      `UPDATE citas
-             SET estado_cita_id = 4
-             WHERE id = $1
-             AND paciente_usuario_id = $2
-             AND estado_cita_id != 4
-             AND fecha_hora_inicio > NOW()`,
+      `UPDATE citas SET estado_cita_id = 4 WHERE id = $1 AND paciente_usuario_id = $2 AND estado_cita_id != 4 AND fecha_hora_inicio > NOW()`,
       [citaId, pacienteId]
     );
 
     if (rowCount === 0) {
-      return res.status(400).json({
-        message:
-          'No se pudo cancelar la cita. Tal vez ya está cancelada o ya pasó la fecha.',
-      });
+      return res.status(400).json({ message: 'No se pudo cancelar la cita.' });
     }
-
     res.status(200).json({ message: 'Cita cancelada correctamente.' });
   } catch (error) {
     console.error('Error al cancelar cita:', error);
@@ -257,7 +277,7 @@ router.get('/mi-historial', isPatient, async (req, res) => {
     );
     res.json(rows);
   } catch (error) {
-    console.error('Error al obtener el historial del paciente:', error);
+    console.error('Error al obtener el historial:', error);
     res.status(500).json({ message: 'Error interno del servidor.' });
   }
 });
