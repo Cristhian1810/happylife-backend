@@ -11,15 +11,15 @@ router.get('/doctores', async (req, res) => {
                 u.id, u.email, u.dni, u.nombres, u.apellidos, u.telefono, u.esta_activo, u.fecha_creacion,
                 pd.numero_colegiatura, pd.biografia,
                 tp.id as titulo_profesional_id, tp.nombre as titulo_profesional,
-                -- Obtenemos la especialidad (asumiendo que solo hay una por lógica de negocio)
-                e.id as especialidad_id, e.nombre as especialidad
+                ARRAY_AGG(e.nombre) FILTER (WHERE e.id IS NOT NULL) as especialidades
             FROM usuarios u
             JOIN perfiles_doctores pd ON u.id = pd.usuario_id
             LEFT JOIN titulos_profesionales tp ON pd.titulo_profesional_id = tp.id
-            -- LEFT JOIN para traer la especialidad desde la tabla intermedia
             LEFT JOIN doctores_especialidades de ON u.id = de.doctor_usuario_id
             LEFT JOIN especialidades e ON de.especialidad_id = e.id
             WHERE u.rol_id = 3
+            -- 👇 LÍNEA CORREGIDA 👇
+            GROUP BY u.id, pd.usuario_id, tp.id
             ORDER BY u.nombres ASC
         `);
     res.json(rows);
@@ -37,8 +37,7 @@ router.get('/doctores/:id', async (req, res) => {
             SELECT
                 u.id, u.email, u.dni, u.nombres, u.apellidos, u.telefono, u.esta_activo,
                 pd.numero_colegiatura, pd.biografia, pd.titulo_profesional_id,
-                -- Subconsulta para obtener el ID de la única especialidad
-                (SELECT especialidad_id FROM doctores_especialidades WHERE doctor_usuario_id = u.id LIMIT 1) as especialidad_id
+                (SELECT ARRAY_AGG(especialidad_id) FROM doctores_especialidades WHERE doctor_usuario_id = u.id) as especialidades_ids
             FROM usuarios u
             JOIN perfiles_doctores pd ON u.id = pd.usuario_id
             WHERE u.id = $1 AND u.rol_id = 3
@@ -67,13 +66,17 @@ router.post('/doctores', async (req, res) => {
     numero_colegiatura,
     biografia,
     titulo_profesional_id,
-    especialidad_id,
+    especialidades,
   } = req.body;
 
-  if (!especialidad_id) {
+  if (
+    !especialidades ||
+    !Array.isArray(especialidades) ||
+    especialidades.length === 0
+  ) {
     return res
       .status(400)
-      .json({ message: 'Debe seleccionar una especialidad.' });
+      .json({ message: 'Debe seleccionar al menos una especialidad.' });
   }
 
   const client = await pool.connect();
@@ -119,7 +122,9 @@ router.post('/doctores', async (req, res) => {
 
     const specialtyInsertQuery =
       'INSERT INTO doctores_especialidades (doctor_usuario_id, especialidad_id) VALUES ($1, $2)';
-    await client.query(specialtyInsertQuery, [usuarioId, especialidad_id]);
+    for (const especialidad_id of especialidades) {
+      await client.query(specialtyInsertQuery, [usuarioId, especialidad_id]);
+    }
 
     await client.query('COMMIT');
     res
@@ -145,13 +150,17 @@ router.put('/doctores/:id', async (req, res) => {
     numero_colegiatura,
     biografia,
     titulo_profesional_id,
-    especialidad_id,
+    especialidades,
   } = req.body;
 
-  if (!especialidad_id) {
+  if (
+    !especialidades ||
+    !Array.isArray(especialidades) ||
+    especialidades.length === 0
+  ) {
     return res
       .status(400)
-      .json({ message: 'Debe seleccionar una especialidad.' });
+      .json({ message: 'Debe seleccionar al menos una especialidad.' });
   }
 
   const client = await pool.connect();
@@ -163,9 +172,11 @@ router.put('/doctores/:id', async (req, res) => {
       [email, id]
     );
     if (existingUser.rowCount > 0) {
-      return res.status(409).json({
-        message: 'El correo electrónico ya está en uso por otro usuario.',
-      });
+      return res
+        .status(409)
+        .json({
+          message: 'El correo electrónico ya está en uso por otro usuario.',
+        });
     }
 
     const updateUserQuery = `
@@ -203,7 +214,9 @@ router.put('/doctores/:id', async (req, res) => {
 
     const specialtyInsertQuery =
       'INSERT INTO doctores_especialidades (doctor_usuario_id, especialidad_id) VALUES ($1, $2)';
-    await client.query(specialtyInsertQuery, [id, especialidad_id]);
+    for (const especialidad_id of especialidades) {
+      await client.query(specialtyInsertQuery, [id, especialidad_id]);
+    }
 
     await client.query('COMMIT');
     res.json({ message: 'Doctor actualizado correctamente' });
