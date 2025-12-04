@@ -103,6 +103,8 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
       } = horarioRes.rows[0]);
     }
 
+    // Obtenemos citas que NO estén canceladas (estado != 4)
+    // Esto asegura que si alguien canceló, ese horario no aparezca ocupado.
     const citasAgendadasRes = await pool.query(
       `SELECT fecha_hora_inicio FROM citas
              WHERE doctor_usuario_id = $1
@@ -136,7 +138,7 @@ router.get('/agendar/horario/:doctorId', async (req, res) => {
   }
 });
 
-// MODIFICADO: Incluye validación de máx. 2 citas y buffer de 30 minutos
+// MODIFICADO: Validación global de máximo 2 citas activas y buffer de 30 minutos
 router.post('/citas', isPatient, async (req, res) => {
   const pacienteId = req.session.userId;
   const { doctor_usuario_id, fecha_hora_inicio, motivo_consulta } = req.body;
@@ -155,26 +157,26 @@ router.post('/citas', isPatient, async (req, res) => {
     const fechaInicio = new Date(fecha_hora_inicio);
     const fechaFin = new Date(fechaInicio.getTime() + duracion * 60000);
 
-    // 2. VALIDACIÓN: Máximo 2 citas por día para este paciente
-    // Usamos DATE() para comparar el día sin importar la hora.
-    const citasDelDiaRes = await pool.query(
+    // 2. VALIDACIÓN ACTUALIZADA: Máximo 2 citas ACTIVAS en total por paciente
+    // Se cuentan citas Programadas (1) y Confirmadas (2).
+    // Esto previene que un usuario genere muchas citas futuras (spam).
+    const citasActivasRes = await pool.query(
       `SELECT count(*) FROM citas 
        WHERE paciente_usuario_id = $1 
-       AND DATE(fecha_hora_inicio) = DATE($2) 
-       AND estado_cita_id != 4`, // Ignoramos las canceladas
-      [pacienteId, fechaInicio]
+       AND estado_cita_id IN (1, 2)`, // Solo Programada y Confirmada
+      [pacienteId]
     );
 
-    if (parseInt(citasDelDiaRes.rows[0].count) >= 2) {
+    if (parseInt(citasActivasRes.rows[0].count) >= 2) {
       return res.status(400).json({
         message:
-          'Has alcanzado el límite de 2 citas para este día. No puedes agendar más.',
+          'Has alcanzado el límite máximo de 2 citas activas. Debes completar o cancelar una cita pendiente antes de agendar otra.',
       });
     }
 
     // 3. VALIDACIÓN: Buffer de 30 minutos entre citas del paciente
-    // Traemos todas las citas activas del paciente para ese día
-    const citasPacienteRes = await pool.query(
+    // Traemos citas activas del paciente para ese día específico para validar cruces de tiempo
+    const citasPacienteDiaRes = await pool.query(
       `SELECT fecha_hora_inicio, fecha_hora_fin FROM citas 
        WHERE paciente_usuario_id = $1 
        AND estado_cita_id != 4
@@ -184,15 +186,11 @@ router.post('/citas', isPatient, async (req, res) => {
 
     const BUFFER_MS = 30 * 60 * 1000; // 30 minutos en milisegundos
 
-    for (const cita of citasPacienteRes.rows) {
+    for (const cita of citasPacienteDiaRes.rows) {
       const citaExistenteInicio = new Date(cita.fecha_hora_inicio).getTime();
       const citaExistenteFin = new Date(cita.fecha_hora_fin).getTime();
       const nuevaInicio = fechaInicio.getTime();
       const nuevaFin = fechaFin.getTime();
-
-      // Comprobamos si la nueva cita "choca" con el rango de la existente + el buffer.
-      // La lógica es: Hay conflicto si la nueva cita empieza antes de que termine la existente + 30min
-      // Y termina después de que empiece la existente - 30min.
 
       const limiteInferior = citaExistenteInicio - BUFFER_MS;
       const limiteSuperior = citaExistenteFin + BUFFER_MS;
@@ -205,7 +203,8 @@ router.post('/citas', isPatient, async (req, res) => {
       }
     }
 
-    // 4. Verificar disponibilidad del Doctor (Que no tenga otra cita en ese horario exacto)
+    // 4. Verificar disponibilidad del Doctor
+    // Verifica que el doctor no tenga citas en ese horario (ignorando las canceladas: estado != 4)
     const cruceCitasDoctor = await pool.query(
       `SELECT id FROM citas 
              WHERE doctor_usuario_id = $1 
@@ -269,6 +268,8 @@ router.put('/mis-citas/:citaId/cancelar', isPatient, async (req, res) => {
   const pacienteId = req.session.userId;
   const { citaId } = req.params;
   try {
+    // Al cambiar el estado a 4 (Cancelada), el horario se libera automáticamente
+    // porque las consultas de disponibilidad filtran con "estado_cita_id != 4".
     const { rowCount } = await pool.query(
       `UPDATE citas
              SET estado_cita_id = 4
